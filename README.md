@@ -57,5 +57,59 @@ An updated code to only display the parameters we are looking for is:
 
 <img src="https://i.imgur.com/GjM71xb.png"/>
 
+Output:
+
+<img src="https://i.imgur.com/YJgFlSg.png"/>
+
+User: ‘glitch’ is not recognised so we investigate.
+**jq -r '["Event_Time", "Event_Source", "Event_Name", "User_Name", "Source_IP"],(.Records[] | select(.userIdentity.userName == "glitch") | [.eventTime, .eventSource, .eventName, .userIdentity.userName // "N/A", .sourceIPAddress // "N/A"]) | @tsv' cloudtrail_log.json | column -t -s $'\t'
+**
+
+Output:
+
+<img src="https://i.imgur.com/oLHjYk1.png"/>
+
+Identify user-agent (even though attacker can change this when attacking) by adding it to the code 
+**jq -r '["Event_Time", "Event_type", "Event_Name", "User_Name", "Source_IP", "User_Agent"],(.Records[] | select(.userIdentity.userName == "glitch") | [.eventTime,.eventType, .eventName, .userIdentity.userName //"N/A",.sourceIPAddress //"N/A", .userAgent //"N/A"]) | @tsv' cloudtrail_log.json | column -t -s $'\t'**
+
+<img src="https://i.imgur.com/K9fBqeL.png"/>
+
+The anomalous account uses a **Google Chrome browser** within a **Mac OS system.**
+This is the userAgent string for the internal console used in AWS. It doesn’t provide much information.
+The next interesting event to look for is who created this anomalous user account. We will filter for all **IAM-related events**, and this can be done by using the select filter 
+**jq -r '["Event_Time", "Event_Source", "Event_Name", "User_Name", "Source_IP"], (.Records[] | select(.eventSource == "iam.amazonaws.com") | [.eventTime, .eventSource, .eventName, .userIdentity.userName // "N/A", .sourceIPAddress // "N/A"]) | @tsv' cloudtrail_log.json | column -t -s $'\t'**
+
+**iam.amazonaws.com** is identity access management for AWS and how users are created and managed.
+
+<img src="https://i.imgur.com/jg0lXwu.png"/>
 
 
+The user mcskidy invoked the CreateUser action and consequently invoking the **AttachUserPolicy** (privilege escalation) action. The source IP where the requests were made is **53.94.201.69**. Remember that it is the same IP the anomalous user glitch used.
+
+Output the records with the following eventsource and eventname:
+**jq '.Records[] |select(.eventSource=="iam.amazonaws.com" and .eventName== "CreateUser")' cloudtrail_log.json
+**
+
+<img src="https://i.imgur.com/FWBpjjx.png"/>
+
+User mcskidy created the account so we now filter for the eventname **AttachUserPolicy** to uncover the permissions set for the newly created user. This event applies access policies to users, defining the extent of access to the account.
+
+<img src="https://i.imgur.com/6c43JZ2.png"/>
+
+In **“policyARN”** we can see administrator access was granted to the user. McSkidy is baffled by these results. She knows that she did not create the anomalous user and did not assign the privileged access. She also doesn’t recognise the IP address involved in the events and does not use a Mac OS; she only uses a Windows machine. All this information is different to the typical IP address and machine used by McSkidy, so she wants to prove her innocence and asks to continue the investigation.
+
+The results from the following code: 
+jq -r '["Event_Time", "Event_Source", "Event_Name", "User_Name", "Source_IP"], (.Records[] | select(.sourceIPAddress=="53.94.201.69") | [.eventTime, .eventSource, .eventName, .userIdentity.userName // "N/A", .sourceIPAddress // "N/A"]) | @tsv' cloudtrail_log.json | column -t -s $'\t'.
+
+Display all events tagged from the chosen IP address which escalated permissions.
+
+Based on the command output, three user accounts (mcskidy, glitch, and mayor_malware) were accessed from the same IP address. The next step is to check each user and see if they always work from that IP.
+jq -r '["Event_Time","Event_Source","Event_Name", "User_Name","User_Agent","Source_IP"],(.Records[] | select(.userIdentity.userName=="PLACEHOLDER") | [.eventTime, .eventSource, .eventName, .userIdentity.userName // "N/A",.userAgent // "N/A",.sourceIPAddress // "N/A"]) | @tsv' cloudtrail_log.json | column -t -s $'\t'.
+
+Replace **‘PLACEHOLDER’** with user we want to look at (mcskidy, glitch, and mayor_malware).
+
+This will tell us the IP, browser and **OS** they use and the similarities and differences in the user’s behaviours.
+
+The bank logs can be found in **file ~/wareville_logs/rds.log.**
+
+**grep INSERT rds.log **will show all of the bank logs.
